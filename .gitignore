@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Documentation and interview files
+DOCUMENTATION.md
+INTERVIEW_CHEATSHEET.md
+INTERVIEW_PRESENTATION.md
+INTERVIEW_QUESTIONS.md

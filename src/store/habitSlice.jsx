@@ -1,7 +1,20 @@
-import { createSlice } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import {
+    collection,
+    addDoc,
+    getDocs,
+    doc,
+    updateDoc,
+    deleteDoc,
+    query,
+    where
+} from 'firebase/firestore';
+import { db } from '../firebase';
 
 const initialState = {
     habits: [],
+    loading: false,
+    error: null
 };
 
 const calculateStreak = (completedDates) => {
@@ -40,14 +53,91 @@ const canIncrementStreak = (lastIncrementTime) => {
     return hoursSinceLastIncrement >= 24;
 };
 
+// Thunks for async operations with Firebase
+export const fetchHabits = createAsyncThunk(
+    'habits/fetchHabits',
+    async (userId, { rejectWithValue }) => {
+        try {
+            const habitsRef = collection(db, 'habits');
+            const q = query(habitsRef, where('userId', '==', userId));
+            const querySnapshot = await getDocs(q);
+
+            const habits = [];
+            querySnapshot.forEach((doc) => {
+                habits.push({
+                    id: doc.id,
+                    ...doc.data()
+                });
+            });
+
+            return habits;
+        } catch (error) {
+            return rejectWithValue(error.message);
+        }
+    }
+);
+
+export const addHabitToFirebase = createAsyncThunk(
+    'habits/addHabitToFirebase',
+    async ({ name, userId }, { rejectWithValue }) => {
+        try {
+            const newHabit = {
+                name,
+                userId,
+                streak: 0,
+                completedDates: [],
+                createdAt: new Date().toISOString(),
+                bestStreak: 0,
+                lastIncrementTime: null,
+            };
+
+            const docRef = await addDoc(collection(db, 'habits'), newHabit);
+            return {
+                id: docRef.id,
+                ...newHabit
+            };
+        } catch (error) {
+            return rejectWithValue(error.message);
+        }
+    }
+);
+
+export const updateHabitInFirebase = createAsyncThunk(
+    'habits/updateHabitInFirebase',
+    async (habit, { rejectWithValue }) => {
+        try {
+            const habitRef = doc(db, 'habits', habit.id);
+            const { id, ...habitData } = habit;
+            await updateDoc(habitRef, habitData);
+            return habit;
+        } catch (error) {
+            return rejectWithValue(error.message);
+        }
+    }
+);
+
+export const deleteHabitFromFirebase = createAsyncThunk(
+    'habits/deleteHabitFromFirebase',
+    async (id, { rejectWithValue }) => {
+        try {
+            await deleteDoc(doc(db, 'habits', id));
+            return id;
+        } catch (error) {
+            return rejectWithValue(error.message);
+        }
+    }
+);
+
 export const habitSlice = createSlice({
     name: 'habits',
     initialState,
     reducers: {
+        // Local reducers kept for compatibility
         addHabit: (state, action) => {
             const newHabit = {
                 id: crypto.randomUUID(),
                 name: action.payload.name,
+                userId: action.payload.userId,
                 streak: 0,
                 completedDates: [],
                 createdAt: new Date().toISOString(),
@@ -90,6 +180,67 @@ export const habitSlice = createSlice({
             state.habits = state.habits.filter(habit => habit.id !== action.payload.id);
         },
     },
+    extraReducers: (builder) => {
+        builder
+            // Fetch habits
+            .addCase(fetchHabits.pending, (state) => {
+                state.loading = true;
+                state.error = null;
+            })
+            .addCase(fetchHabits.fulfilled, (state, action) => {
+                state.loading = false;
+                state.habits = action.payload;
+            })
+            .addCase(fetchHabits.rejected, (state, action) => {
+                state.loading = false;
+                state.error = action.payload;
+            })
+
+            // Add habit
+            .addCase(addHabitToFirebase.pending, (state) => {
+                state.loading = true;
+                state.error = null;
+            })
+            .addCase(addHabitToFirebase.fulfilled, (state, action) => {
+                state.loading = false;
+                state.habits.push(action.payload);
+            })
+            .addCase(addHabitToFirebase.rejected, (state, action) => {
+                state.loading = false;
+                state.error = action.payload;
+            })
+
+            // Update habit
+            .addCase(updateHabitInFirebase.pending, (state) => {
+                state.loading = true;
+                state.error = null;
+            })
+            .addCase(updateHabitInFirebase.fulfilled, (state, action) => {
+                state.loading = false;
+                const index = state.habits.findIndex(h => h.id === action.payload.id);
+                if (index !== -1) {
+                    state.habits[index] = action.payload;
+                }
+            })
+            .addCase(updateHabitInFirebase.rejected, (state, action) => {
+                state.loading = false;
+                state.error = action.payload;
+            })
+
+            // Delete habit
+            .addCase(deleteHabitFromFirebase.pending, (state) => {
+                state.loading = true;
+                state.error = null;
+            })
+            .addCase(deleteHabitFromFirebase.fulfilled, (state, action) => {
+                state.loading = false;
+                state.habits = state.habits.filter(habit => habit.id !== action.payload);
+            })
+            .addCase(deleteHabitFromFirebase.rejected, (state, action) => {
+                state.loading = false;
+                state.error = action.payload;
+            });
+    }
 });
 
 export const { addHabit, toggleHabit, deleteHabit, incrementStreak } = habitSlice.actions;
