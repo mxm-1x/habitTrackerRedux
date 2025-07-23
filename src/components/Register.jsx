@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { auth } from '../firebase';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { loginStart, loginSuccess, loginFailure } from '../store/authSlice';
+import { createUserProfile } from '../store/userSlice';
 import { Mail, Lock, User, UserPlus, ArrowRight } from 'lucide-react';
 
 export const Register = ({ onToggleForm }) => {
@@ -23,6 +24,14 @@ export const Register = ({ onToggleForm }) => {
             await updateProfile(userCredential.user, {
                 displayName: name
             });
+            
+            // Create user profile in Firestore
+            await dispatch(createUserProfile({
+                userId: userCredential.user.uid,
+                displayName: name,
+                email: email
+            })).unwrap();
+            
             dispatch(loginSuccess(userCredential.user));
         } catch (error) {
             dispatch(loginFailure(error.message));

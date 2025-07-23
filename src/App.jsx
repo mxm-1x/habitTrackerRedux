@@ -7,10 +7,12 @@ import { Navbar } from './components/Navbar';
 import { HomePage } from './pages/HomePage';
 import { ProfilePage } from './pages/ProfilePage';
 import { ProgressPage } from './pages/ProgressPage';
+import { LeaderboardPage } from './pages/LeaderboardPage';
 import { auth } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { loginSuccess, logout } from './store/authSlice';
 import { fetchHabits } from './store/habitSlice';
+import { fetchAllUsers, migrateToNewStructure, createUserProfile } from './store/userSlice';
 
 // Protected route component
 const ProtectedRoute = ({ children }) => {
@@ -27,12 +29,42 @@ const AppContent = () => {
   const dispatch = useDispatch();
   const { currentUser } = useSelector((state) => state.auth);
 
+  // Run migration once when app starts
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const runMigration = async () => {
+      try {
+        console.log('Running migration on app start...');
+        await dispatch(migrateToNewStructure()).unwrap();
+      } catch (error) {
+        console.error('Migration error:', error);
+      }
+    };
+    
+    runMigration();
+  }, [dispatch]);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         dispatch(loginSuccess(user));
-        // Fetch habits when user logs in
-        dispatch(fetchHabits(user.uid));
+        
+        try {
+          // Ensure user has a profile first (for existing users who might not have one)
+          await dispatch(createUserProfile({
+            userId: user.uid,
+            displayName: user.displayName || `User ${user.uid.slice(-6)}`,
+            email: user.email || ''
+          })).unwrap();
+          
+          await dispatch(fetchAllUsers()).unwrap();
+          
+          // Fetch habits after ensuring user profile exists
+          dispatch(fetchHabits(user.uid));
+        } catch (error) {
+          console.error('Error during user initialization:', error);
+          // Still try to fetch habits even if other operations fail
+          dispatch(fetchHabits(user.uid));
+        }
       } else {
         dispatch(logout());
       }
@@ -79,6 +111,14 @@ const AppContent = () => {
                     element={
                       <ProtectedRoute>
                         <ProgressPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/leaderboard"
+                    element={
+                      <ProtectedRoute>
+                        <LeaderboardPage />
                       </ProtectedRoute>
                     }
                   />
